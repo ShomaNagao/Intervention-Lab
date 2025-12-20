@@ -1,0 +1,72 @@
+{
+	"Type": "Live2D Expression",
+	"FadeInTime": 0.1,
+	"FadeOutTime": 0.1,
+	"Parameters": [
+		{
+			"Id": "ParamNeutral",
+			"Value": 1,
+			"Blend": "Add"
+		},
+		{
+			"Id": "ParamAnger",
+			"Value": 1,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamEyeLOpen_Anger",
+			"Value": 1,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamEyeROpen_Anger",
+			"Value": 1,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamBrowL_Anger",
+			"Value": 0.719,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamBrowR_Anger",
+			"Value": 0.719,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamMouth_Anger",
+			"Value": 0.048,
+			"Blend": "Overwrite"
+		},
+		{
+			"Id": "ParamSurprised",
+			"Value": 0,
+			"Blend": "Multiply"
+		},
+		{
+			"Id": "ParamFear",
+			"Value": 0,
+			"Blend": "Multiply"
+		},
+		{
+			"Id": "ParamSad",
+			"Value": 0,
+			"Blend": "Multiply"
+		},
+		{
+			"Id": "ParamDisgust",
+			"Value": 0,
+			"Blend": "Multiply"
+		},
+		{
+			"Id": "ParamRegret",
+			"Value": 0,
+			"Blend": "Multiply"
+		},
+		{
+			"Id": "ParamHappy",
+			"Value": 0,
+			"Blend": "Multiply"
+		}
+	]
+}

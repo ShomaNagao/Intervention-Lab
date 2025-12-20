@@ -1,0 +1,42 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "AModel.moc3",
+		"Textures": [
+			"AModel.8192/texture_00.png"
+		],
+		"Physics": "AModel.physics3.json",
+		"DisplayInfo": "AModel.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "nomal",
+				"File": "nomal.exp3.json"
+			},
+			{
+				"Name": "sad",
+				"File": "sad.exp3.json"
+			},
+			{
+				"Name": "happy",
+				"File": "happy.exp3.json"
+			},
+			{
+				"Name": "angry",
+				"File": "angry.exp3.json"
+			}
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": []
+		}
+	],
+	"HitAreas": []
+}
