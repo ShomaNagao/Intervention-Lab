@@ -2,39 +2,35 @@ import express from 'express';
 import fetch from 'node-fetch';
 import cors from 'cors';
 import 'dotenv/config'; 
+
 const app = express();
-// Renderなどのホスティングサービスでは環境変数 PORT が割り当てられます
-const port = process.env.PORT || 3001;
+
+// 【重要】Renderが割り当てるポート番号を使う設定 (なければ3001)
+const port = process.env.PORT || 3001; 
 
 // --- CORS設定 ---
-// Qualtricsやローカル環境からのアクセスを許可する必要があります。
-// 開発中は origin: '*' で全て許可するか、特定のQualtricsドメインを指定します。
-const allowedOrigins = [
-  'http://127.0.0.1:3000', 
-  'http://localhost:3000',
-  'null',
-  // 必要に応じてQualtricsのドメインを追加 (例: https://yourbrand.qualtrics.com)
-];
-
+// 開発中はトラブルを避けるため一旦すべて許可するか、許可リストを作ります。
+// 将来的にはQualtricsのドメインだけに絞るのが安全ですが、まずは接続確認のため広めに設定します。
 app.use(cors({
   origin: function (origin, callback) {
-    // originがない場合(サーバー同士など)や許可リストにある場合は通す
-    if (!origin || allowedOrigins.includes(origin) || true) { // ★テスト用に一旦 true (全許可) にしていますが、本番は調整推奨
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // originがない場合(サーバー間通信など)や、許可したいドメインなら通す
+    // ★今はテストのため、一旦すべてのアクセスを通す設定にします
+    return callback(null, true);
   },
-  credentials: true // クッキー等が必要な場合
+  credentials: true
 }));
 
-// --- ChatGPT API を呼び出すエンドポイント定義 (/api/chat) ---
+app.use(express.json());
+
+// --- ChatGPT API (/api/chat) ---
 app.post('/api/chat', async (req, res) => {
     const { messages } = req.body;
     const apiKey = process.env.OPENAI_API_KEY;
+    
     if (!apiKey) {
-        return res.status(500).json({ error: 'サーバー側でAPIキーが設定されていません。' });
+        return res.status(500).json({ error: 'APIキーがサーバー側で設定されていません。' });
     }
+
     try {
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -43,66 +39,59 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'gpt-5.1-2025-11-13', // 使用するモデルを指定
-                messages: messages // 受け取った会話履歴をそのまま渡す
+                model: 'gpt-4o', // または gpt-3.5-turbo など
+                messages: messages
             })
         });
+        
         const data = await response.json();
         if (!response.ok) {
-            // OpenAIからのエラーをそのままクライアントに返す
             return res.status(response.status).json(data);
         }
         res.json(data);
     } catch (error) {
         console.error('サーバーエラー:', error);
-        res.status(500).json({ error: 'サーバーでエラーが発生しました。' });
+        res.status(500).json({ error: 'サーバー内部エラーが発生しました。' });
     }
 });
 
-// --- テキストを音声に変換するエンドポイント定義 (/api/tts) ---
+// --- TTS API (/api/tts) ---
 app.post('/api/tts', async (req, res) => {
   const { text, voice = 'echo', format = 'mp3', instructions } = req.body || {};
+  const apiKey = process.env.OPENAI_API_KEY;
 
-  console.log('[TTS API] request', {
-    head: text && text.slice(0, 30),
-    length: text && text.length,
-    voice,
-    format
-  });
+  if (!apiKey) return res.status(500).json({ error: 'API Key missing' });
 
-  const rsp = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini-tts',
-      input: text,
-      voice,
-      format,
-      instructions
-    }),
-  });
+  try {
+      const rsp = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'tts-1', // または tts-1-hd
+          input: text,
+          voice,
+          response_format: format,
+        }),
+      });
 
-  console.log('[TTS API] OpenAI status =', rsp.status);
+      if (!rsp.ok) {
+        const err = await rsp.text();
+        return res.status(500).json({ error: err });
+      }
 
-  if (!rsp.ok) {
-    const err = await rsp.text();
-    console.error('[TTS API] error body =', err);
-    return res.status(500).json({ error: err });
+      const buf = Buffer.from(await rsp.arrayBuffer());
+      res.set('Content-Type', format === 'wav' ? 'audio/wav' : 'audio/mpeg');
+      res.send(buf);
+  } catch (e) {
+      console.error(e);
+      res.status(500).send(e.message);
   }
-
-  const buf = Buffer.from(await rsp.arrayBuffer());
-  console.log('[TTS API] response bytes =', buf.length);
-
-  res.set('Content-Type', format === 'wav' ? 'audio/wav' : 'audio/mpeg');
-  res.set('Cache-Control', 'no-store');
-  res.send(buf);
 });
 
-
-// --- 指定ポートでサーバーを起動 ---
+// --- サーバー起動 ---
 app.listen(port, () => {
-    console.log(`サーバーが http://localhost:${port} で起動しました`);
+    console.log(`Server is running on port ${port}`);
 });
