@@ -22,6 +22,17 @@ app.use(cors({
 
 app.use(express.json());
 
+// --- Wake/Health check (NO OpenAI call) ---
+app.get('/healthz', (req, res) => {
+  res.status(200).send('ok');
+});
+
+// （任意）トップもOKにしておくと便利
+app.get('/', (req, res) => {
+  res.status(200).send('ok');
+});
+
+
 // --- ChatGPT API (/api/chat) ---
 app.post('/api/chat', async (req, res) => {
     const { messages } = req.body;
