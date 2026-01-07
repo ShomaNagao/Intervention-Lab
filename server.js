@@ -4,13 +4,9 @@ import cors from 'cors';
 import 'dotenv/config'; 
 
 const app = express();
-
-// 【重要】Renderが割り当てるポート番号を使う設定 (なければ3001)
 const port = process.env.PORT || 3001; 
 
-// --- CORS設定 ---
-// 開発中はトラブルを避けるため一旦すべて許可するか、許可リストを作ります。
-// 将来的にはQualtricsのドメインだけに絞るのが安全ですが、まずは接続確認のため広めに設定します。
+
 app.use(cors({
   origin: function (origin, callback) {
     // originがない場合(サーバー間通信など)や、許可したいドメインなら通す
