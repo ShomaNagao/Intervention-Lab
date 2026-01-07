@@ -50,7 +50,7 @@ app.post('/api/chat', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'gpt-4o', // または gpt-3.5-turbo など
+                model: 'gpt-5.1', // または gpt-3.5-turbo など
                 messages: messages
             })
         });
@@ -81,7 +81,7 @@ app.post('/api/tts', async (req, res) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'tts-1', // または tts-1-hd
+          model: 'gpt-4o-mini-tts', // または tts-1-hd
           input: text,
           voice,
           response_format: format,
