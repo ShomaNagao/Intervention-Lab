@@ -1,16 +1,16 @@
 // cubismcore-loader.js
 (function () {
-  // 既にロード済みなら何もしない
-  if (window.Live2DCubismCore) return;
-
   const CORE_URL = "https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js";
+
+  // ★重要：他のコードが await できる Promise を用意（多重実行も防ぐ）
+  if (window.__cubismCoreReady) return;
 
   function loadByScriptTag(url, { timeoutMs = 15000, retry = 1 } = {}) {
     return new Promise((resolve, reject) => {
       let done = false;
 
       const s = document.createElement("script");
-      s.src = url;                 // ★ jQuery.getScript と違って ?_=... を付けない
+      s.src = url;
       s.async = true;
       s.crossOrigin = "anonymous";
 
@@ -35,7 +35,6 @@
         s.remove();
 
         if (retry > 0) {
-          // 少し待ってリトライ（ネットワーク瞬断対策）
           setTimeout(() => {
             loadByScriptTag(url, { timeoutMs, retry: retry - 1 }).then(resolve, reject);
           }, 500);
@@ -48,15 +47,16 @@
     });
   }
 
-  // 実行
-  loadByScriptTag(CORE_URL, { retry: 2 })
-    .then(() => {
-      if (!window.Live2DCubismCore) {
-        throw new Error("Loaded but Live2DCubismCore is still undefined");
-      }
-    })
-    .catch((e) => {
-      // 必要ならここでconsoleに出す（Qualtrics本番では抑制してもOK）
-      console.error("[CubismCore Loader]", e);
-    });
+  // 既にロード済みなら即resolve
+  if (window.Live2DCubismCore) {
+    window.__cubismCoreReady = Promise.resolve();
+    return;
+  }
+
+  // ★Promiseを公開（Qualtrics側が await できる）
+  window.__cubismCoreReady = loadByScriptTag(CORE_URL, { retry: 2 }).then(() => {
+    if (!window.Live2DCubismCore) {
+      throw new Error("Loaded but Live2DCubismCore is still undefined");
+    }
+  });
 })();
