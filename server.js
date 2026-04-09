@@ -20,9 +20,6 @@ app.use(cors({
 
   origin: function (origin, callback) {
 
-    // originがない場合(サーバー間通信など)や、許可したいドメインなら通す
-
-    // ★今はテストのため、一旦すべてのアクセスを通す設定にします
 
     return callback(null, true);
 
