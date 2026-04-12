@@ -58,6 +58,13 @@ app.get('/', (req, res) => {
 // --- ChatGPT API (/api/chat) ---
 
 app.post('/api/chat', async (req, res) => {
+    const secretKey = req.headers['x-custom-secret']; 
+    const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
+
+    if (!MY_SECRET || secretKey !== MY_SECRET) {
+        console.error('認証失敗');
+        return res.status(403).json({ error: 'Forbidden' });
+    }
 
     const { messages } = req.body;
 
