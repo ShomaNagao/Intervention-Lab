@@ -7,6 +7,8 @@ import { rateLimit } from 'express-rate-limit'; // 【追加】ライブラリ�
 const app = express();
 const port = process.env.PORT || 3001; 
 
+app.set('trust proxy', 1);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分間
   max: 100, // 15分間に各IPから最大100リクエストまで
@@ -15,6 +17,8 @@ const limiter = rateLimit({
   legacyHeaders: false, // `X-RateLimit-*` ヘッダーを非表示にする
 });
 
+// 全てのルート、または特定のルートに適用
+// 今回はAPIを守りたいので /api/ に適用
 app.use('/api/', limiter);
 
 app.use(cors({
@@ -25,6 +29,8 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// --- 以下、既存のルート ---
 app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
