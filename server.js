@@ -2,23 +2,23 @@ import express from 'express';
 import fetch from 'node-fetch';
 import cors from 'cors';
 import 'dotenv/config'; 
-import { rateLimit } from 'express-rate-limit'; // 【追加】ライブラリのインポート
+import { rateLimit } from 'express-rate-limit'; 
 
 const app = express();
 const port = process.env.PORT || 3001; 
 
 app.set('trust proxy', 1);
 
+
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1分間
-  max: 500, // 1分間に各IPから最大500リクエストまで
+  windowMs: 1 * 60 * 1000, //
+  max: 500, 
   message: { error: "リクエスト回数が多すぎます。しばらく時間を置いてから再度お試しください。" },
-  standardHeaders: true, // `RateLimit-*` ヘッダーを返す
-  legacyHeaders: false, // `X-RateLimit-*` ヘッダーを非表示にする
+  standardHeaders: true, 
+  legacyHeaders: false, 
 });
 
-// 全てのルート、または特定のルートに適用
-// 今回はAPIを守りたいので /api/ に適用
+
 app.use('/api/', limiter);
 
 app.use(cors({
@@ -30,13 +30,12 @@ app.use(cors({
 
 app.use(express.json());
 
-// --- 以下、既存のルート ---
+
 app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
 app.post('/api/chat', async (req, res) => {
-    // 認証チェック (合言葉)
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
 
