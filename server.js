@@ -55,8 +55,6 @@ app.get('/', (req, res) => {
 
 
 
-
-
 // --- ChatGPT API (/api/chat) ---
 
 app.post('/api/chat', async (req, res) => {
@@ -91,7 +89,7 @@ app.post('/api/chat', async (req, res) => {
 
             body: JSON.stringify({
 
-                model: 'gpt-5.1', // または gpt-3.5-turbo など
+                model: 'gpt-4.1-2025-04-14', // または gpt-3.5-turbo など
 
                 messages: messages
 
@@ -123,77 +121,6 @@ app.post('/api/chat', async (req, res) => {
 
 });
 
-
-
-// --- TTS API (/api/tts) ---
-
-app.post('/api/tts', async (req, res) => {
-
-  const { text, voice = 'echo', format = 'mp3', instructions } = req.body || {};
-
-  const apiKey = process.env.OPENAI_API_KEY;
-
-
-
-  if (!apiKey) return res.status(500).json({ error: 'API Key missing' });
-
-
-
-  try {
-
-      const rsp = await fetch('https://api.openai.com/v1/audio/speech', {
-
-        method: 'POST',
-
-        headers: {
-
-          'Authorization': `Bearer ${apiKey}`,
-
-          'Content-Type': 'application/json',
-
-        },
-
-        body: JSON.stringify({
-
-          model: 'gpt-4o-mini-tts', // または tts-1-hd
-
-          input: text,
-
-          voice,
-
-          response_format: format,
-
-        }),
-
-      });
-
-
-
-      if (!rsp.ok) {
-
-        const err = await rsp.text();
-
-        return res.status(500).json({ error: err });
-
-      }
-
-
-
-      const buf = Buffer.from(await rsp.arrayBuffer());
-
-      res.set('Content-Type', format === 'wav' ? 'audio/wav' : 'audio/mpeg');
-
-      res.send(buf);
-
-  } catch (e) {
-
-      console.error(e);
-
-      res.status(500).send(e.message);
-
-  }
-
-});
 
 
 
