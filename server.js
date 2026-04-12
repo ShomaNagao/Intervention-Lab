@@ -1,63 +1,36 @@
 import express from 'express';
-
 import fetch from 'node-fetch';
-
 import cors from 'cors';
-
 import 'dotenv/config'; 
-
-
+import { rateLimit } from 'express-rate-limit'; // 【追加】ライブラリのインポート
 
 const app = express();
-
 const port = process.env.PORT || 3001; 
 
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15分間
+  max: 100, // 15分間に各IPから最大100リクエストまで
+  message: { error: "リクエスト回数が多すぎます。しばらく時間を置いてから再度お試しください。" },
+  standardHeaders: true, // `RateLimit-*` ヘッダーを返す
+  legacyHeaders: false, // `X-RateLimit-*` ヘッダーを非表示にする
+});
 
-
-
+app.use('/api/', limiter);
 
 app.use(cors({
-
   origin: function (origin, callback) {
-
-
     return callback(null, true);
-
   },
-
   credentials: true
-
 }));
 
-
-
 app.use(express.json());
-
-
-
-// --- Wake/Health check (NO OpenAI call) ---
-
 app.get('/healthz', (req, res) => {
-
   res.status(200).send('ok');
-
 });
-
-
-
-// （任意）トップもOKにしておくと便利
-
-app.get('/', (req, res) => {
-
-  res.status(200).send('ok');
-
-});
-
-
-
-// --- ChatGPT API (/api/chat) ---
 
 app.post('/api/chat', async (req, res) => {
+    // 認証チェック (合言葉)
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
 
@@ -67,74 +40,36 @@ app.post('/api/chat', async (req, res) => {
     }
 
     const { messages } = req.body;
-
     const apiKey = process.env.OPENAI_API_KEY;
 
-    
-
     if (!apiKey) {
-
         return res.status(500).json({ error: 'APIキーがサーバー側で設定されていません。' });
-
     }
-
-
 
     try {
-
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
-
             method: 'POST',
-
             headers: {
-
                 'Content-Type': 'application/json',
-
                 'Authorization': `Bearer ${apiKey}`
-
             },
-
             body: JSON.stringify({
-
-                model: 'gpt-4.1-2025-04-14', // または gpt-3.5-turbo など
-
+                model: 'gpt-4.1-2025-04-14',
                 messages: messages
-
             })
-
         });
-
         
-
         const data = await response.json();
-
         if (!response.ok) {
-
-          console.error('OpenAI API Error:', JSON.stringify(data, null, 2));
-
             return res.status(response.status).json(data);
-
         }
-
         res.json(data);
-
     } catch (error) {
-
         console.error('サーバーエラー:', error);
-
         res.status(500).json({ error: 'サーバー内部エラーが発生しました。' });
-
     }
-
 });
 
-
-
-
-// --- サーバー起動 ---
-
 app.listen(port, () => {
-
     console.log(`Server is running on port ${port}`);
-
 });
