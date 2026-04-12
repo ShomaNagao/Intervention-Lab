@@ -10,8 +10,8 @@ const port = process.env.PORT || 3001;
 app.set('trust proxy', 1);
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分間
-  max: 100, // 15分間に各IPから最大100リクエストまで
+  windowMs: 1 * 60 * 1000, // 1分間
+  max: 500, // 1分間に各IPから最大500リクエストまで
   message: { error: "リクエスト回数が多すぎます。しばらく時間を置いてから再度お試しください。" },
   standardHeaders: true, // `RateLimit-*` ヘッダーを返す
   legacyHeaders: false, // `X-RateLimit-*` ヘッダーを非表示にする
