@@ -34,8 +34,7 @@ app.get('/healthz', (req, res) => {
 });
 
 // ==========================================
-// 1. チャットストリーミングAPI (新規追加)
-// AIの応答を1文字ずつリアルタイムにフロントエンドへ流し込みます
+// 1. チャットストリーミングAPI
 // ==========================================
 app.post('/api/chat-stream', async (req, res) => {
     const secretKey = req.headers['x-custom-secret']; 
@@ -50,7 +49,6 @@ app.post('/api/chat-stream', async (req, res) => {
 
     if (!apiKey) return res.status(500).json({ error: 'API key missing' });
 
-    // ストリーミング用のヘッダーを設定
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -63,9 +61,9 @@ app.post('/api/chat-stream', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'gpt-4o', // 速度を重視するためgpt-4oを推奨します
+                model: 'gpt-4o', 
                 messages: messages,
-                stream: true // ここでストリーミングを有効化
+                stream: true 
             })
         });
 
@@ -74,7 +72,6 @@ app.post('/api/chat-stream', async (req, res) => {
             return res.status(response.status).json(error);
         }
 
-        // OpenAIからのストリームをそのままクライアントへ転送（パイプ）
         response.body.pipe(res);
     } catch (error) {
         console.error('Chat Stream Error:', error);
@@ -83,8 +80,7 @@ app.post('/api/chat-stream', async (req, res) => {
 });
 
 // ==========================================
-// 2. TTS (音声合成) API (新規追加)
-// 1文ごとのテキストを受け取り、軽量なOpus音声にして返します
+// 2. TTS (音声合成) API
 // ==========================================
 app.post('/api/tts', async (req, res) => {
     const secretKey = req.headers['x-custom-secret']; 
@@ -102,16 +98,18 @@ app.post('/api/tts', async (req, res) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'tts-1', // 最速モデル
+                model: 'tts-1',
                 input: text,
                 voice: voice,
-                response_format: 'opus' // 低遅延・軽量フォーマット
+                // ★変更点：ブラウザで正確な長さ(duration)を取得するためMP3に変更
+                response_format: 'mp3' 
             })
         });
 
         if (!response.ok) return res.status(response.status).json(await response.json());
 
-        res.setHeader('Content-Type', 'audio/ogg');
+        // ★変更点：MIMEタイプをmp3に合わせる
+        res.setHeader('Content-Type', 'audio/mpeg');
         response.body.pipe(res);
     } catch (error) {
         console.error('TTS Error:', error);
