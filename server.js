@@ -1,29 +1,25 @@
 import express from 'express';
-import fetch from 'node-fetch';
+import fetch from 'node-fetch'; // サーバー環境によっては組み込みのfetchを使う場合もあります
 import cors from 'cors';
-import 'dotenv/config';
-import { rateLimit } from 'express-rate-limit';
+import 'dotenv/config'; 
+import { rateLimit } from 'express-rate-limit'; 
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3001; 
 
 app.set('trust proxy', 1);
 
-///////////////////////////////////////////////////////////////////////////
-// レート制限
-///////////////////////////////////////////////////////////////////////////
+// レート制限設定
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 500,
-  message: { error: "リクエスト回数が多すぎます。しばらく時間を置いてから再度お試しください。" },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: { error: "リクエスト回数が多すぎます。" },
+  standardHeaders: true, 
+  legacyHeaders: false, 
 });
 app.use('/api/', limiter);
 
-///////////////////////////////////////////////////////////////////////////
-// CORS
-///////////////////////////////////////////////////////////////////////////
+// CORS設定
 app.use(cors({
   origin: function (origin, callback) {
     return callback(null, true);
@@ -33,188 +29,96 @@ app.use(cors({
 
 app.use(express.json());
 
-///////////////////////////////////////////////////////////////////////////
-// ヘルスチェック
-///////////////////////////////////////////////////////////////////////////
 app.get('/healthz', (req, res) => {
   res.status(200).send('ok');
 });
 
+// ==========================================
+// 1. チャットストリーミングAPI (新規追加)
+// AIの応答を1文字ずつリアルタイムにフロントエンドへ流し込みます
+// ==========================================
+app.post('/api/chat-stream', async (req, res) => {
+    const secretKey = req.headers['x-custom-secret']; 
+    const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
 
-///////////////////////////////////////////////////////////////////////////
-// POST /api/chat  — ストリーミング SSE
-//
-// クライアントへの SSE フォーマット:
-//   data: {"delta":"<chunk_text>"}\n\n   … テキストデルタ
-//   data: [DONE]\n\n                      … 完了
-//   data: {"error":"<msg>"}\n\n           … エラー
-///////////////////////////////////////////////////////////////////////////
-app.post('/api/chat', async (req, res) => {
-  // 認証
-  const secretKey = req.headers['x-custom-secret'];
-  const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
-  if (!MY_SECRET || secretKey !== MY_SECRET) {
-    console.error('認証失敗');
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
-  const { messages } = req.body;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'APIキーがサーバー側で設定されていません。' });
-  }
-
-  // SSE ヘッダー
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  // SSE ヘルパー
-  const sendEvent = (payload) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-  const sendDone = () => {
-    res.write('data: [DONE]\n\n');
-    res.end();
-  };
-
-  try {
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-2025-04-14',
-        messages: messages,
-        stream: true
-      })
-    });
-
-    if (!openaiRes.ok) {
-      const errData = await openaiRes.json().catch(() => ({}));
-      sendEvent({ error: errData?.error?.message || `OpenAI error ${openaiRes.status}` });
-      res.end();
-      return;
+    if (!MY_SECRET || secretKey !== MY_SECRET) {
+        return res.status(403).json({ error: 'Forbidden' });
     }
 
-    // OpenAI SSE ストリームをそのままクライアントに転送
-    const decoder = new TextDecoder();
-    let buffer = '';
+    const { messages } = req.body;
+    const apiKey = process.env.OPENAI_API_KEY;
 
-    openaiRes.body.on('data', (chunk) => {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // 未完行を保持
+    if (!apiKey) return res.status(500).json({ error: 'API key missing' });
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data:')) continue;
-        const raw = trimmed.slice(5).trim();
-        if (raw === '[DONE]') {
-          sendDone();
-          return;
+    // ストリーミング用のヘッダーを設定
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o', // 速度を重視するためgpt-4oを推奨します
+                messages: messages,
+                stream: true // ここでストリーミングを有効化
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            return res.status(response.status).json(error);
         }
-        try {
-          const parsed = JSON.parse(raw);
-          const delta = parsed?.choices?.[0]?.delta?.content;
-          if (delta) sendEvent({ delta });
-        } catch (_) {
-          // malformed chunk — skip
-        }
-      }
-    });
 
-    openaiRes.body.on('end', () => {
-      sendDone();
-    });
-
-    openaiRes.body.on('error', (err) => {
-      console.error('OpenAI stream error:', err);
-      sendEvent({ error: 'ストリームエラーが発生しました。' });
-      res.end();
-    });
-
-    // クライアント切断時のクリーンアップ
-    req.on('close', () => {
-      openaiRes.body.destroy();
-    });
-
-  } catch (error) {
-    console.error('サーバーエラー:', error);
-    sendEvent({ error: 'サーバー内部エラーが発生しました。' });
-    res.end();
-  }
+        // OpenAIからのストリームをそのままクライアントへ転送（パイプ）
+        response.body.pipe(res);
+    } catch (error) {
+        console.error('Chat Stream Error:', error);
+        res.status(500).end();
+    }
 });
 
-
-///////////////////////////////////////////////////////////////////////////
-// POST /api/tts  — テキストを Opus 音声にして返す
-//
-// Body: { text: string }
-// Returns: audio/ogg (Opus)
-///////////////////////////////////////////////////////////////////////////
+// ==========================================
+// 2. TTS (音声合成) API (新規追加)
+// 1文ごとのテキストを受け取り、軽量なOpus音声にして返します
+// ==========================================
 app.post('/api/tts', async (req, res) => {
-  // 認証
-  const secretKey = req.headers['x-custom-secret'];
-  const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
-  if (!MY_SECRET || secretKey !== MY_SECRET) {
-    console.error('TTS 認証失敗');
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+    const secretKey = req.headers['x-custom-secret']; 
+    const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
+    if (!MY_SECRET || secretKey !== MY_SECRET) return res.status(403).json({ error: 'Forbidden' });
 
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ error: 'text は必須です。' });
-  }
+    const { text, voice = 'nova' } = req.body;
+    const apiKey = process.env.OPENAI_API_KEY;
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'APIキーがサーバー側で設定されていません。' });
-  }
+    try {
+        const response = await fetch('https://api.openai.com/v1/audio/speech', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'tts-1', // 最速モデル
+                input: text,
+                voice: voice,
+                response_format: 'opus' // 低遅延・軽量フォーマット
+            })
+        });
 
-  try {
-    const ttsRes = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'tts-1',
-        input: text.trim(),
-        voice: 'nova',
-        response_format: 'opus'
-      })
-    });
+        if (!response.ok) return res.status(response.status).json(await response.json());
 
-    if (!ttsRes.ok) {
-      const errData = await ttsRes.json().catch(() => ({}));
-      const msg = errData?.error?.message || `TTS error ${ttsRes.status}`;
-      return res.status(ttsRes.status).json({ error: msg });
+        res.setHeader('Content-Type', 'audio/ogg');
+        response.body.pipe(res);
+    } catch (error) {
+        console.error('TTS Error:', error);
+        res.status(500).json({ error: '音声生成失敗' });
     }
-
-    res.setHeader('Content-Type', 'audio/ogg');
-    res.setHeader('Cache-Control', 'no-store');
-    // OpenAI TTS レスポンスボディをそのままクライアントへ pipe
-    ttsRes.body.pipe(res);
-
-    ttsRes.body.on('error', (err) => {
-      console.error('TTS pipe error:', err);
-      if (!res.headersSent) res.status(500).end();
-    });
-
-  } catch (error) {
-    console.error('TTS サーバーエラー:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'TTS サーバー内部エラーが発生しました。' });
-    }
-  }
 });
-
 
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+    console.log(`Server is running on port ${port}`);
 });
