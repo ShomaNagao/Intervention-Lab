@@ -87,7 +87,12 @@ app.post('/api/tts', async (req, res) => {
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
     if (!MY_SECRET || secretKey !== MY_SECRET) return res.status(403).json({ error: 'Forbidden' });
 
-    const { text, voice = 'nova' } = req.body;
+    const {
+        text,
+        voice = 'nova',
+        instructions = '',
+        model = 'gpt-4o-mini-tts-2025-12-15'
+    } = req.body;
     const apiKey = process.env.OPENAI_API_KEY;
 
     try {
@@ -98,9 +103,10 @@ app.post('/api/tts', async (req, res) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'tts-1',
+                model: model,
                 input: text,
                 voice: voice,
+                instructions: instructions,
                 // ★変更点：ブラウザで正確な長さ(duration)を取得するためMP3に変更
                 response_format: 'mp3' 
             })
