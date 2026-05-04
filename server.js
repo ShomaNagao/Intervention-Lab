@@ -98,6 +98,7 @@ app.post('/api/chat-stream', async (req, res) => {
 // 2. TTS (音声合成) API
 // ==========================================
 app.post('/api/tts', async (req, res) => {
+    const TTS_MODEL = 'gpt-4o-mini-tts-2025-12-15';
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
     if (!MY_SECRET || secretKey !== MY_SECRET) {
@@ -108,13 +109,12 @@ app.post('/api/tts', async (req, res) => {
     const {
         text,
         voice = 'nova',
-        instructions = '',
-        model = 'gpt-4o-mini-tts-2025-12-15'
+        instructions = ''
     } = req.body;
     const apiKey = process.env.OPENAI_API_KEY;
 
     const textLength = text ? text.length : 0;
-    console.log(`[tts] リクエスト受信 - モデル: ${model}, 声: ${voice}, 文字数: ${textLength}`);
+    console.log(`[tts] リクエスト受信 - モデル: ${TTS_MODEL}, 声: ${voice}, 文字数: ${textLength}`);
 
     const startTime = Date.now();
 
@@ -126,7 +126,7 @@ app.post('/api/tts', async (req, res) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: model,
+                model: TTS_MODEL,
                 input: text,
                 voice: voice,
                 instructions: instructions,
