@@ -98,7 +98,7 @@ app.post('/api/chat-stream', async (req, res) => {
 // 2. TTS (音声合成) API
 // ==========================================
 app.post('/api/tts', async (req, res) => {
-    const TTS_MODEL = 'gpt-4o-mini-tts-2025-12-15';
+    const TTS_MODEL = 'gpt-4o-mini-tts';
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
     if (!MY_SECRET || secretKey !== MY_SECRET) {
@@ -107,13 +107,21 @@ app.post('/api/tts', async (req, res) => {
     }
 
     const {
+        requestId = '',
+        textHash = '',
         text,
         voice = 'nova',
         instructions = ''
     } = req.body;
     const apiKey = process.env.OPENAI_API_KEY;
+    const safeText = String(text || '');
 
-    const textLength = text ? text.length : 0;
+    const textLength = safeText.length;
+    console.log(`[tts] requestId: ${requestId}`);
+    console.log(`[tts] client textHash: ${textHash}`);
+    console.log(`[tts] text length: ${safeText.length}`);
+    console.log(`[tts] text head: ${JSON.stringify(safeText.slice(0, 80))}`);
+    console.log(`[tts] text tail: ${JSON.stringify(safeText.slice(-80))}`);
     console.log(`[tts] リクエスト受信 - モデル: ${TTS_MODEL}, 声: ${voice}, 文字数: ${textLength}`);
 
     const startTime = Date.now();
@@ -127,7 +135,7 @@ app.post('/api/tts', async (req, res) => {
             },
             body: JSON.stringify({
                 model: TTS_MODEL,
-                input: text,
+                input: safeText,
                 voice: voice,
                 instructions: instructions,
                 response_format: 'mp3'
@@ -153,6 +161,8 @@ app.post('/api/tts', async (req, res) => {
         // Content-Lengthを付与してレスポンス
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Length', buffer.length);
+        res.setHeader('X-TTS-Request-Id', requestId);
+        res.setHeader('X-TTS-Text-Hash', textHash);
         // キャッシュ禁止（古い音声が再利用されないように）
         res.setHeader('Cache-Control', 'no-store');
         res.end(buffer);
