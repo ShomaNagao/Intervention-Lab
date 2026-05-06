@@ -69,7 +69,7 @@ app.post('/api/chat-stream', async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: 'gpt-4o', 
+                model: 'gpt-5.1-2025-11-13', 
                 messages: messages,
                 stream: true 
             })
