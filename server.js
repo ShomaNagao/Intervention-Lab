@@ -307,7 +307,7 @@ app.post('/api/tts', async (req, res) => {
 
         console.log(`[tts] OpenAI API応答受信 - 経過: ${Date.now() - startTime}ms`);
 
-        // ★ 修正点：ストリームを直接流さず、一度バッファに受け取る
+        // ストリームを直接流さず、一度バッファに受け取る
         // これによりContent-Lengthヘッダーを付与でき、
         // ブラウザ側でaudio.durationがInfinityにならなくなる
         const arrayBuffer = await response.arrayBuffer();
