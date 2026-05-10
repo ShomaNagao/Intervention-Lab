@@ -59,7 +59,7 @@ app.post('/api/chat-stream', async (req, res) => {
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
 
     if (!MY_SECRET || secretKey !== MY_SECRET) {
-        console.warn('[chat-stream] 403 Forbidden: 不正なsecretキー');
+        //console.warn('[chat-stream] 403 Forbidden: 不正なsecretキー');
         return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -67,11 +67,11 @@ app.post('/api/chat-stream', async (req, res) => {
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-        console.error('[chat-stream] APIキーが設定されていません');
+        //console.error('[chat-stream] APIキーが設定されていません');
         return res.status(500).json({ error: 'API key missing' });
     }
 
-    console.log(`[chat-stream] リクエスト受信 - メッセージ数: ${messages ? messages.length : 0}`);
+    //console.log(`[chat-stream] リクエスト受信 - メッセージ数: ${messages ? messages.length : 0}`);
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -95,19 +95,19 @@ app.post('/api/chat-stream', async (req, res) => {
 
         if (!response.ok) {
             const error = await response.json();
-            console.error(`[chat-stream] OpenAI APIエラー: HTTP ${response.status}`, error);
+            //console.error(`[chat-stream] OpenAI APIエラー: HTTP ${response.status}`, error);
             return res.status(response.status).json(error);
         }
 
-        console.log(`[chat-stream] OpenAI API接続成功 - 経過: ${Date.now() - startTime}ms`);
+        //console.log(`[chat-stream] OpenAI API接続成功 - 経過: ${Date.now() - startTime}ms`);
 
         response.body.on('end', () => {
-            console.log(`[chat-stream] ストリーム完了 - 合計: ${Date.now() - startTime}ms`);
+            //console.log(`[chat-stream] ストリーム完了 - 合計: ${Date.now() - startTime}ms`);
         });
 
         response.body.pipe(res);
     } catch (error) {
-        console.error('[chat-stream] 予期しないエラー:', error);
+        //console.error('[chat-stream] 予期しないエラー:', error);
         res.status(500).end();
     }
 });
@@ -120,7 +120,7 @@ app.post('/api/tts', async (req, res) => {
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
     if (!MY_SECRET || secretKey !== MY_SECRET) {
-        console.warn('[tts] 403 Forbidden: 不正なsecretキー');
+        //console.warn('[tts] 403 Forbidden: 不正なsecretキー');
         return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -135,12 +135,12 @@ app.post('/api/tts', async (req, res) => {
     const safeText = String(text || '');
 
     const textLength = safeText.length;
-    console.log(`[tts] requestId: ${requestId}`);
-    console.log(`[tts] client textHash: ${textHash}`);
-    console.log(`[tts] text length: ${safeText.length}`);
-    console.log(`[tts] text head: ${JSON.stringify(safeText.slice(0, 80))}`);
-    console.log(`[tts] text tail: ${JSON.stringify(safeText.slice(-80))}`);
-    console.log(`[tts] リクエスト受信 - モデル: ${TTS_MODEL}, 声: ${voice}, 文字数: ${textLength}`);
+    //console.log(`[tts] requestId: ${requestId}`);
+    //console.log(`[tts] client textHash: ${textHash}`);
+    //console.log(`[tts] text length: ${safeText.length}`);
+    //console.log(`[tts] text head: ${JSON.stringify(safeText.slice(0, 80))}`);
+    //console.log(`[tts] text tail: ${JSON.stringify(safeText.slice(-80))}`);
+    //console.log(`[tts] リクエスト受信 - モデル: ${TTS_MODEL}, 声: ${voice}, 文字数: ${textLength}`);
 
     const startTime = Date.now();
 
@@ -162,11 +162,11 @@ app.post('/api/tts', async (req, res) => {
 
         if (!response.ok) {
             const errBody = await response.json();
-            console.error(`[tts] OpenAI APIエラー: HTTP ${response.status}`, errBody);
+            //console.error(`[tts] OpenAI APIエラー: HTTP ${response.status}`, errBody);
             return res.status(response.status).json(errBody);
         }
 
-        console.log(`[tts] OpenAI API応答受信 - 経過: ${Date.now() - startTime}ms`);
+        //console.log(`[tts] OpenAI API応答受信 - 経過: ${Date.now() - startTime}ms`);
 
         // ストリームを直接流さず、一度バッファに受け取る
         // これによりContent-Lengthヘッダーを付与でき、
@@ -174,7 +174,7 @@ app.post('/api/tts', async (req, res) => {
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        console.log(`[tts] 音声バッファ取得完了 - サイズ: ${buffer.length} bytes, 経過: ${Date.now() - startTime}ms`);
+        //console.log(`[tts] 音声バッファ取得完了 - サイズ: ${buffer.length} bytes, 経過: ${Date.now() - startTime}ms`);
 
         // Content-Lengthを付与してレスポンス
         res.setHeader('Content-Type', 'audio/mpeg');
@@ -185,14 +185,14 @@ app.post('/api/tts', async (req, res) => {
         res.setHeader('Cache-Control', 'no-store');
         res.end(buffer);
 
-        console.log(`[tts] レスポンス送信完了 - 合計: ${Date.now() - startTime}ms`);
+        //console.log(`[tts] レスポンス送信完了 - 合計: ${Date.now() - startTime}ms`);
 
     } catch (error) {
-        console.error('[tts] 予期しないエラー:', error);
+        //console.error('[tts] 予期しないエラー:', error);
         res.status(500).json({ error: '音声生成失敗' });
     }
 });
 
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    //console.log(`Server is running on port ${port}`);
 });
