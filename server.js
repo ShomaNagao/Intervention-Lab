@@ -1,8 +1,127 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import cors from 'cors';
+import fs from 'fs';
 import 'dotenv/config'; 
 import { rateLimit } from 'express-rate-limit'; 
+
+const SECRET_DIR = process.env.SECRET_DIR || '/etc/secrets';
+
+let PLAYBOOKS;
+let INTERVENTION_TEMPLATE;
+let CONTROL_TEMPLATE;
+
+try {
+  PLAYBOOKS = JSON.parse(
+    fs.readFileSync(`${SECRET_DIR}/experiment-playbooks.json`, 'utf8')
+  );
+
+  INTERVENTION_TEMPLATE = fs.readFileSync(
+    `${SECRET_DIR}/intervention-prompt.txt`,
+    'utf8'
+  );
+
+  CONTROL_TEMPLATE = fs.readFileSync(
+    `${SECRET_DIR}/control-prompt.txt`,
+    'utf8'
+  );
+
+  console.log('[config] Secret files loaded');
+} catch (error) {
+  console.error('[config] Secret files load failed:', error);
+  process.exit(1);
+}
+
+const BLOCK_TO_KEY = {
+  "1": "bee",
+  "2": "car",
+  "3": "fall",
+  "4": "hs",
+  "5": "caught",
+  "6": "shocked"
+};
+
+const TRAIT_TO_PLAYBOOK_KEY = {
+  "社会的内向性": "INTV",
+  "内省性": "REFL",
+  "独自性": "UNIQ",
+  "敏感性": "SENS"
+};
+
+function normalizeClientMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+
+  return messages
+    .filter((m) => m && ['user', 'assistant'].includes(m.role))
+    .map((m) => ({
+      role: m.role,
+      content: String(m.content ?? '').slice(0, 4000)
+    }))
+    .slice(-12);
+}
+
+function getPreparedMessage({ block, group, primaryTrait }) {
+  const scenarioKey = BLOCK_TO_KEY[String(block)];
+  if (!scenarioKey) {
+    throw new Error(`invalid block: ${block}`);
+  }
+
+  const playbook = PLAYBOOKS[scenarioKey];
+  if (!playbook) {
+    throw new Error(`playbook not found: ${scenarioKey}`);
+  }
+
+  const isPersonalized = String(group || '').trim() === 'A';
+  const traitName = String(primaryTrait || '').trim();
+
+  let preparedMessage = '';
+
+  if (isPersonalized) {
+    const playbookKey = TRAIT_TO_PLAYBOOK_KEY[traitName];
+    if (playbookKey) {
+      preparedMessage = playbook.SP?.[playbookKey]?.short || '';
+    }
+  }
+
+  if (!preparedMessage) {
+    preparedMessage = playbook.SG?.EDU?.short || '';
+  }
+
+  if (!preparedMessage) {
+    throw new Error(`prepared message not found: ${scenarioKey}`);
+  }
+
+  return preparedMessage;
+}
+
+function buildBaseMessagesOnServer({ block, group, primaryTrait, scenarioText }) {
+  const isPersonalized = String(group || '').trim() === 'A';
+
+  const preparedMessage = getPreparedMessage({
+    block,
+    group,
+    primaryTrait
+  });
+
+  const systemTemplate = isPersonalized
+    ? INTERVENTION_TEMPLATE
+    : CONTROL_TEMPLATE;
+
+  if (!systemTemplate) {
+    throw new Error('system template not found');
+  }
+
+  const personalityTrait = String(primaryTrait || '').trim();
+
+  const systemContent = systemTemplate
+    .replace(/\{\{PERSONALITY_TRAIT\}\}/g, personalityTrait)
+    .replace(/\{\{PREPARED_MESSAGE\}\}/g, preparedMessage);
+
+  return [
+    { role: 'system', content: systemContent },
+    { role: 'developer', content: String(scenarioText || '') }
+  ];
+}
 
 const app = express();
 const port = process.env.PORT || 3001; 
@@ -64,7 +183,7 @@ app.post('/api/chat-stream', async (req, res) => {
         return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const { messages } = req.body;
+    const { messages, block, group, primaryTrait, scenarioText } = req.body || {};
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -72,7 +191,26 @@ app.post('/api/chat-stream', async (req, res) => {
         return res.status(500).json({ error: 'API key missing' });
     }
 
-    console.log(`[chat-stream] リクエスト受信 - メッセージ数: ${messages ? messages.length : 0}`);
+    let openAiMessages;
+
+    try {
+        const baseMessages = buildBaseMessagesOnServer({
+            block,
+            group,
+            primaryTrait,
+            scenarioText
+        });
+        const normalizedClientMessages = normalizeClientMessages(messages);
+        openAiMessages = [
+            ...baseMessages,
+            ...normalizedClientMessages
+        ];
+    } catch (error) {
+        console.error('[chat-stream] Invalid experiment configuration:', error);
+        return res.status(400).json({ error: 'Invalid experiment configuration' });
+    }
+
+    console.log(`[chat-stream] messages prepared: ${openAiMessages.length}`);
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -89,7 +227,7 @@ app.post('/api/chat-stream', async (req, res) => {
             },
             body: JSON.stringify({
                 model: 'gpt-5.1-2025-11-13', 
-                messages: messages,
+                messages: openAiMessages,
                 stream: true 
             })
         });
