@@ -47,7 +47,8 @@ app.use('/api', cors(corsOptions));
 
 app.use(express.json());
 
-app.get('/healthz', (req, res) => {
+// /healthz にも同じCORSオプションを適用
+app.get('/healthz', cors({ origin: '*' }), (req, res) => {
   res.status(200).send('ok');
 });
 
