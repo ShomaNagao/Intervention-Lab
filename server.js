@@ -9,6 +9,29 @@ const port = process.env.PORT || 3001;
 
 app.set('trust proxy', 1);
 
+const ALLOWED_ORIGINS = new Set([
+  'https://survey.syd1.qualtrics.com',
+]);
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) {
+      return callback(new Error('CORS blocked: missing Origin'), false);
+    }
+
+    if (ALLOWED_ORIGINS.has(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked: ${origin}`), false);
+  },
+  credentials: false,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-custom-secret'],
+  exposedHeaders: ['X-TTS-Request-Id', 'X-TTS-Text-Hash'],
+  maxAge: 86400,
+};
+
 // レート制限設定
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000,
@@ -20,12 +43,7 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // CORS設定
-app.use(cors({
-  origin: function (origin, callback) {
-    return callback(null, true);
-  },
-  credentials: true
-}));
+app.use('/api', cors(corsOptions));
 
 app.use(express.json());
 
