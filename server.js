@@ -47,7 +47,7 @@ app.use('/api', cors(corsOptions));
 
 app.use(express.json());
 
-app.get('/healthz', (req, res) => {
+app.get('/healthz', cors(corsOptions), (req, res) => {
   res.status(200).send('ok');
 });
 
