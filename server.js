@@ -2,10 +2,50 @@ import express from 'express';
 import fetch from 'node-fetch';
 import cors from 'cors';
 import fs from 'fs';
+import crypto from 'crypto';
 import 'dotenv/config'; 
 import { rateLimit } from 'express-rate-limit'; 
 
 const SECRET_DIR = process.env.SECRET_DIR || '/etc/secrets';
+const PROMPT_DEBUG = process.env.PROMPT_DEBUG === 'true';
+const PROMPT_DEBUG_FULL = process.env.PROMPT_DEBUG_FULL === 'true';
+
+function debugLog(...args) {
+  if (PROMPT_DEBUG) console.log(...args);
+}
+
+function hashText(text) {
+  return crypto
+    .createHash('sha256')
+    .update(String(text || ''))
+    .digest('hex')
+    .slice(0, 12);
+}
+
+function oneLinePreview(text, n = 120) {
+  return String(text || '')
+    .replace(/\s+/g, ' ')
+    .slice(0, n);
+}
+
+function logTextSummary(label, text, requestId = 'startup') {
+  if (!PROMPT_DEBUG) return;
+
+  const s = String(text || '');
+  const head = oneLinePreview(s.slice(0, 200));
+  const tail = oneLinePreview(s.slice(-200));
+
+  console.log(`[prompt-debug:${requestId}] ${label}`, {
+    length: s.length,
+    hash: hashText(s),
+    head,
+    tail
+  });
+}
+
+function looksUnresolvedPipedText(value) {
+  return String(value || '').includes('${e://Field/');
+}
 
 let PLAYBOOKS;
 let INTERVENTION_TEMPLATE;
@@ -27,6 +67,22 @@ try {
   );
 
   console.log('[config] Secret files loaded');
+  console.log(`[config] SECRET_DIR=${SECRET_DIR}`);
+
+  logTextSummary('intervention-prompt.txt', INTERVENTION_TEMPLATE);
+  logTextSummary('control-prompt.txt', CONTROL_TEMPLATE);
+
+  if (PROMPT_DEBUG) {
+    console.log('[config] PLAYBOOK scenario keys:', Object.keys(PLAYBOOKS || {}));
+    console.log('[config] intervention placeholders:', {
+      PERSONALITY_TRAIT: INTERVENTION_TEMPLATE.includes('{{PERSONALITY_TRAIT}}'),
+      PREPARED_MESSAGE: INTERVENTION_TEMPLATE.includes('{{PREPARED_MESSAGE}}')
+    });
+    console.log('[config] control placeholders:', {
+      PERSONALITY_TRAIT: CONTROL_TEMPLATE.includes('{{PERSONALITY_TRAIT}}'),
+      PREPARED_MESSAGE: CONTROL_TEMPLATE.includes('{{PREPARED_MESSAGE}}')
+    });
+  }
 } catch (error) {
   console.error('[config] Secret files load failed:', error);
   process.exit(1);
@@ -48,6 +104,46 @@ const TRAIT_TO_PLAYBOOK_KEY = {
   "敏感性": "SENS"
 };
 
+function logPlaybookSummary() {
+  if (!PROMPT_DEBUG) return;
+
+  console.log('[config] playbook summary start');
+
+  for (const [block, scenarioKey] of Object.entries(BLOCK_TO_KEY)) {
+    const playbook = PLAYBOOKS?.[scenarioKey];
+
+    console.log(`[config] block=${block} scenarioKey=${scenarioKey}`, {
+      exists: !!playbook,
+      SP_KEYS: playbook?.SP ? Object.keys(playbook.SP) : [],
+      SG_KEYS: playbook?.SG ? Object.keys(playbook.SG) : []
+    });
+
+    for (const key of ['INTV', 'REFL', 'UNIQ', 'SENS']) {
+      const entry = playbook?.SP?.[key];
+      console.log(`[config] ${scenarioKey}.SP.${key}`, {
+        exists: !!entry,
+        code: entry?.code || '',
+        name: entry?.name || '',
+        shortLength: String(entry?.short || '').length,
+        shortHash: hashText(entry?.short || '')
+      });
+    }
+
+    const edu = playbook?.SG?.EDU;
+    console.log(`[config] ${scenarioKey}.SG.EDU`, {
+      exists: !!edu,
+      code: edu?.code || '',
+      name: edu?.name || '',
+      shortLength: String(edu?.short || '').length,
+      shortHash: hashText(edu?.short || '')
+    });
+  }
+
+  console.log('[config] playbook summary end');
+}
+
+logPlaybookSummary();
+
 function normalizeClientMessages(messages) {
   if (!Array.isArray(messages)) return [];
 
@@ -60,8 +156,23 @@ function normalizeClientMessages(messages) {
     .slice(-12);
 }
 
-function getPreparedMessage({ block, group, primaryTrait }) {
+function getPreparedMessage({ block, group, primaryTrait, requestId = 'no-reqid' }) {
   const scenarioKey = BLOCK_TO_KEY[String(block)];
+
+  debugLog(`[prompt-input:${requestId}] raw input`, {
+    block,
+    scenarioKey,
+    group,
+    primaryTrait
+  });
+
+  if (looksUnresolvedPipedText(group) || looksUnresolvedPipedText(primaryTrait)) {
+    console.warn(`[prompt-input:${requestId}] Qualtrics piped text may be unresolved`, {
+      group,
+      primaryTrait
+    });
+  }
+
   if (!scenarioKey) {
     throw new Error(`invalid block: ${block}`);
   }
@@ -73,39 +184,71 @@ function getPreparedMessage({ block, group, primaryTrait }) {
 
   const isPersonalized = String(group || '').trim() === 'A';
   const traitName = String(primaryTrait || '').trim();
+  const playbookKey = isPersonalized ? TRAIT_TO_PLAYBOOK_KEY[traitName] : undefined;
 
-  let preparedMessage = '';
+  let selectedEntry = null;
+  let selectedPath = '';
 
-  if (isPersonalized) {
-    const playbookKey = TRAIT_TO_PLAYBOOK_KEY[traitName];
-    if (playbookKey) {
-      preparedMessage = playbook.SP?.[playbookKey]?.short || '';
-    }
+  if (isPersonalized && playbookKey) {
+    selectedEntry = playbook.SP?.[playbookKey] || null;
+    selectedPath = `${scenarioKey}.SP.${playbookKey}`;
   }
 
-  if (!preparedMessage) {
-    preparedMessage = playbook.SG?.EDU?.short || '';
+  if (!selectedEntry || !selectedEntry.short) {
+    selectedEntry = playbook.SG?.EDU || null;
+    selectedPath = `${scenarioKey}.SG.EDU`;
   }
 
-  if (!preparedMessage) {
+  if (!selectedEntry || !selectedEntry.short) {
     throw new Error(`prepared message not found: ${scenarioKey}`);
   }
 
-  return preparedMessage;
+  debugLog(`[prompt-select:${requestId}] selected prepared message`, {
+    block,
+    scenarioKey,
+    group,
+    isPersonalized,
+    primaryTrait: traitName,
+    playbookKey: playbookKey || '',
+    selectedPath,
+    code: selectedEntry.code || '',
+    name: selectedEntry.name || '',
+    shortLength: String(selectedEntry.short || '').length,
+    shortHash: hashText(selectedEntry.short || '')
+  });
+
+  logTextSummary(`preparedMessage ${selectedPath}`, selectedEntry.short, requestId);
+
+  if (PROMPT_DEBUG_FULL) {
+    console.log(`[prompt-full:${requestId}] preparedMessage ${selectedPath}\n${selectedEntry.short}`);
+  }
+
+  return selectedEntry.short;
 }
 
-function buildBaseMessagesOnServer({ block, group, primaryTrait, scenarioText }) {
+function buildBaseMessagesOnServer({ block, group, primaryTrait, scenarioText, requestId = 'no-reqid' }) {
   const isPersonalized = String(group || '').trim() === 'A';
 
   const preparedMessage = getPreparedMessage({
     block,
     group,
-    primaryTrait
+    primaryTrait,
+    requestId
   });
 
   const systemTemplate = isPersonalized
     ? INTERVENTION_TEMPLATE
     : CONTROL_TEMPLATE;
+  const systemTemplateName = isPersonalized
+    ? 'intervention-prompt.txt'
+    : 'control-prompt.txt';
+
+  debugLog(`[prompt-template:${requestId}] selected system template`, {
+    systemTemplateName,
+    isPersonalized,
+    templateLength: String(systemTemplate || '').length,
+    templateHash: hashText(systemTemplate)
+  });
 
   if (!systemTemplate) {
     throw new Error('system template not found');
@@ -116,6 +259,27 @@ function buildBaseMessagesOnServer({ block, group, primaryTrait, scenarioText })
   const systemContent = systemTemplate
     .replace(/\{\{PERSONALITY_TRAIT\}\}/g, personalityTrait)
     .replace(/\{\{PREPARED_MESSAGE\}\}/g, preparedMessage);
+
+  const placeholderRemaining = {
+    PERSONALITY_TRAIT: systemContent.includes('{{PERSONALITY_TRAIT}}'),
+    PREPARED_MESSAGE: systemContent.includes('{{PREPARED_MESSAGE}}')
+  };
+
+  debugLog(`[prompt-final:${requestId}] final system content`, {
+    systemLength: systemContent.length,
+    systemHash: hashText(systemContent),
+    scenarioTextLength: String(scenarioText || '').length,
+    scenarioTextHash: hashText(scenarioText || ''),
+    placeholderRemaining
+  });
+
+  logTextSummary('final systemContent', systemContent, requestId);
+  logTextSummary('scenarioText', scenarioText, requestId);
+
+  if (PROMPT_DEBUG_FULL) {
+    console.log(`[prompt-full:${requestId}] systemContent\n${systemContent}`);
+    console.log(`[prompt-full:${requestId}] scenarioText\n${String(scenarioText || '')}`);
+  }
 
   return [
     { role: 'system', content: systemContent },
@@ -175,6 +339,7 @@ app.get('/healthz', cors({ origin: '*' }), (req, res) => {
 // 1. チャットストリーミングAPI
 // ==========================================
 app.post('/api/chat-stream', async (req, res) => {
+    const requestId = crypto.randomUUID();
     const secretKey = req.headers['x-custom-secret']; 
     const MY_SECRET = process.env.CHAT_AUTH_PASSWORD;
 
@@ -184,6 +349,23 @@ app.post('/api/chat-stream', async (req, res) => {
     }
 
     const { messages, block, group, primaryTrait, scenarioText } = req.body || {};
+    debugLog(`[chat-stream:${requestId}] request body summary`, {
+        block,
+        group,
+        primaryTrait,
+        scenarioTextLength: String(scenarioText || '').length,
+        messagesLength: Array.isArray(messages) ? messages.length : null,
+        lastMessageRole: Array.isArray(messages) && messages.length > 0 ? messages[messages.length - 1].role : null,
+        lastMessageLength: Array.isArray(messages) && messages.length > 0 ? String(messages[messages.length - 1].content || '').length : null
+    });
+
+    if (looksUnresolvedPipedText(group) || looksUnresolvedPipedText(primaryTrait)) {
+        console.warn(`[chat-stream:${requestId}] unresolved Qualtrics piped text detected`, {
+            group,
+            primaryTrait
+        });
+    }
+
     const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -198,7 +380,8 @@ app.post('/api/chat-stream', async (req, res) => {
             block,
             group,
             primaryTrait,
-            scenarioText
+            scenarioText,
+            requestId
         });
         const normalizedClientMessages = normalizeClientMessages(messages);
         openAiMessages = [
@@ -211,6 +394,12 @@ app.post('/api/chat-stream', async (req, res) => {
     }
 
     console.log(`[chat-stream] messages prepared: ${openAiMessages.length}`);
+    debugLog(`[chat-stream:${requestId}] openAiMessages summary`, {
+        count: openAiMessages.length,
+        roles: openAiMessages.map((m) => m.role),
+        systemLength: String(openAiMessages[0]?.content || '').length,
+        developerLength: String(openAiMessages[1]?.content || '').length
+    });
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -307,7 +496,7 @@ app.post('/api/tts', async (req, res) => {
 
         console.log(`[tts] OpenAI API応答受信 - 経過: ${Date.now() - startTime}ms`);
 
-        // ストリームを直接流さず、一度バッファに受け取る
+        // ★ 修正点：ストリームを直接流さず、一度バッファに受け取る
         // これによりContent-Lengthヘッダーを付与でき、
         // ブラウザ側でaudio.durationがInfinityにならなくなる
         const arrayBuffer = await response.arrayBuffer();
